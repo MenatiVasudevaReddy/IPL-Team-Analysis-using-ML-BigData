@@ -1,0 +1,78 @@
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.DoubleWritable;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+public class IPLTeamAnalysis {
+    
+    public static class IPLMapper extends Mapper<Object, Text, Text, IntWritable> {
+        
+        private Text teamName = new Text();
+        private static final IntWritable one = new IntWritable(1);
+
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+            String[] fields = value.toString().split(",");
+            String team1 = fields[5].trim();
+            String team2 = fields[6].trim();
+            String winningTeam = fields[14].trim();
+
+            teamName.set(team1);
+            context.write(teamName, one);
+
+            teamName.set(team2);
+            context.write(teamName, one);
+
+            if (!winningTeam.equals("NA")) {
+                teamName.set(winningTeam);
+                context.write(teamName, one);
+            }
+        }
+    }
+
+    public static class IPLReducer extends Reducer<Text, IntWritable, Text, Text> {
+        
+        private Text result = new Text();
+
+        public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+            int matches = 0;
+            int wins = 0;
+
+            for (IntWritable val : values) {
+                matches++;
+                wins += val.get();
+            }
+
+            double winningPercentage = (double) wins / matches * 100;
+            String output = "Matches: " + matches + ", Wins: " + wins + ", Winning Percentage: " + String.format("%.2f%%", winningPercentage);
+            result.set(output);
+
+            context.write(key, result);
+        }
+    }
+
+public static void main(String[] args) throws Exception {
+    Configuration conf = new Configuration();
+    Job job = Job.getInstance(conf, "IPL Team Analysis");
+    job.setJarByClass(IPLTeamAnalysis.class);
+    job.setMapperClass(IPLMapper.class);
+    job.setCombinerClass(IPLReducer.class);
+    job.setReducerClass(IPLReducer.class);
+    job.setOutputKeyClass(Text.class);
+    job.setOutputValueClass(IntWritable.class);
+    FileInputFormat.addInputPath(job, new Path(args[0])); 
+    FileOutputFormat.setOutputPath(job, new Path(args[1]));
+    System.exit(job.waitForCompletion(true) ? 0 : 1);
+}
+}
